@@ -28,10 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Agora você pode acessar as propriedades do objeto como desejar
-    $token = $data->token;
-    $saldo = $data->saldo;
-    $price = $data->price;
-    $qtde = $data->qtde;
+    $token = isset($data->token) && is_string($data->token) ? $data->token : '';
+    $requestedPrice = isset($data->price) && is_numeric($data->price) ? (float)$data->price : null;
+
+    if ($token === '' || $requestedPrice === null || $requestedPrice < 0) {
+        http_response_code(400);
+        echo json_encode(array('error' => 'Dados inválidos'));
+        exit;
+    }
     
 }
 
@@ -44,13 +48,61 @@ if ($mysqli->connect_errno) {
 printf("Connect failed: %s\n", $mysqli->connect_error);
 exit();
 }
+$token = isset($token) && is_string($token) ? $token : '';
+$requestedPrice = isset($requestedPrice) && is_numeric($requestedPrice) ? (float)$requestedPrice : null;
+$status = 400;
+$msg = 'Requisição inválida';
+$saldo = -1;
+$price = null;
+$userFound = false;
 
+$userStmt = $mysqli->prepare('SELECT saldo FROM users WHERE token = ? LIMIT 1');
+if ($userStmt !== false) {
+    $dbSaldo = null;
+    $userStmt->bind_param('s', $token);
+    $userStmt->execute();
+    $userStmt->bind_result($dbSaldo);
+    if ($userStmt->fetch()) {
+        $userFound = true;
+        $saldo = (float)$dbSaldo;
+    }
+}
+
+if ($userFound) {
+    $priceStmt = $mysqli->prepare('SELECT price FROM produtos WHERE price = ? LIMIT 1');
+    if ($priceStmt !== false) {
+        $dbPrice = null;
+        $priceStmt->bind_param('d', $requestedPrice);
+        $priceStmt->execute();
+        $priceStmt->bind_result($dbPrice);
+        if ($priceStmt->fetch()) {
+            $price = (float)$dbPrice;
+        }
+    }
+}
+
+if (!$userFound) {
+    $status = 400;
+    $msg = 'Usuário não encontrado!';
+    $saldo = -1;
+    $price = 1;
+} elseif ($price === null || $price <= 0) {
+    $status = 400;
+    $msg = 'Preço inválido!';
+    $saldo = -1;
+    $price = 1;
+} elseif ($saldo < $price) {
+    $status = 400;
+    $msg = 'Você não possui saldo!';
+}
+
+$token = mysqli_real_escape_string($mysqli, $token);
 if ($saldo >= $price) {
 
-            $query  = "UPDATE users SET saldo=saldo-$price WHERE token = '$token' AND saldo > 0";
+            $query  = "UPDATE users SET saldo=saldo-$price WHERE token = '$token' AND saldo >= $price";
             $debitado = mysqli_query($mysqli, $query);  
 
-            if ($debitado === TRUE) {
+            if ($debitado === TRUE && mysqli_affected_rows($mysqli) > 0) {
 
                 $status = 200;
                 $msg = "Compra realizada com sucesso!";
