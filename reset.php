@@ -12,7 +12,14 @@ header("Access-Control-Max-Age: 86400");
 
 header('Content-Type: application/json; charset=utf-8');
 
-$token = $_GET["token"];
+$token = isset($_GET["token"]) ? $_GET["token"] : '';
+$current_password = isset($_GET["current_password"]) ? $_GET["current_password"] : '';
+
+if (!is_string($token) || !is_string($current_password) || $token === '' || $current_password === '') {
+    http_response_code(400);
+    echo json_encode(array("results" => array(array('status' => 400))));
+    exit;
+}
 
 if (isset($_GET["password"])) {
     
@@ -36,25 +43,42 @@ printf("Connect failed: %s\n", $mysqli->connect_error);
 exit();
 }
 
-            $query  = "SELECT id FROM users WHERE token='$token'";
-            $con = mysqli_query($mysqli,$query);
+            $query = "SELECT id FROM users WHERE token = ? AND password = ?";
+            $stmt = mysqli_prepare($mysqli, $query);
+            if ($stmt === false) {
+                http_response_code(500);
+                echo json_encode(array("results" => array(array('status' => 500))));
+                exit;
+            }
+            mysqli_stmt_bind_param($stmt, 'ss', $token, $current_password);
+            mysqli_stmt_execute($stmt);
+            mysqli_stmt_store_result($stmt);
+            $authorized = (mysqli_stmt_num_rows($stmt) > 0);
+            mysqli_stmt_close($stmt);
 
-            
-            if (mysqli_num_rows($con) > 0) {
+            if ($authorized) {
 
             $output = array("results" => array());
 
             if (!empty($username)) {
-                $query  = "UPDATE users SET username = '$username' where token='$token'";
-                $res = mysqli_query($mysqli, $query);
-
+                $query  = "UPDATE users SET username = ? WHERE token = ?";
+                $stmt2 = mysqli_prepare($mysqli, $query);
+                if ($stmt2 !== false) {
+                    mysqli_stmt_bind_param($stmt2, 'ss', $username, $token);
+                    mysqli_stmt_execute($stmt2);
+                    mysqli_stmt_close($stmt2);
+                }
             }
 
             if (!empty($password)) {
-                $query  = "UPDATE users SET password = '$password' where token='$token'";
-                $res = mysqli_query($mysqli, $query);
-
-            }            
+                $query  = "UPDATE users SET password = ? WHERE token = ?";
+                $stmt3 = mysqli_prepare($mysqli, $query);
+                if ($stmt3 !== false) {
+                    mysqli_stmt_bind_param($stmt3, 'ss', $password, $token);
+                    mysqli_stmt_execute($stmt3);
+                    mysqli_stmt_close($stmt3);
+                }
+            }
 
                 $output = array("results" => array());
 
